@@ -27,6 +27,10 @@ build/
 Thumbs.db
 *.local
 
+# Data
+*.csv
+*.tsv
+
 # Logs
 npm-debug.log*
 yarn-debug.log*
