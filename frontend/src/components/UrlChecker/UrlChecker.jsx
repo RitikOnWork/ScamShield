@@ -4,11 +4,18 @@ function UrlChecker() {
   const [url, setUrl] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
 
   const checkUrl = async () => {
-    if (!url.trim()) return;
+    if (!url.trim()) {
+      setError("Enter a URL to analyze.");
+      return;
+    }
 
     setLoading(true);
+    setError("");
+    setFeedbackMessage("");
     try {
       const res = await fetch("http://localhost:8000/api/check-url", {
         method: "POST",
@@ -18,12 +25,49 @@ function UrlChecker() {
         body: JSON.stringify({ url }),
       });
 
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || "URL analysis failed.");
+      }
+
       const data = await res.json();
       setResult(data);
     } catch (err) {
       console.error(err);
+      setResult(null);
+      setError(err.message || "Unable to analyze this URL right now.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  const submitFeedback = async (userLabel) => {
+    if (!result) return;
+
+    setFeedbackMessage("");
+    try {
+      const res = await fetch("http://localhost:8000/api/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input_data: url,
+          original_label: result.label,
+          user_label: userLabel,
+          type: "url",
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Unable to save your feedback.");
+      }
+
+      setFeedbackMessage("Thanks. Your URL review feedback was saved.");
+    } catch (err) {
+      console.error(err);
+      setFeedbackMessage("Feedback could not be saved right now.");
+    }
   };
 
   const getColor = () => {
@@ -44,6 +88,9 @@ function UrlChecker() {
       {/* INPUT CARD */}
       <div className="glass-card" style={{ padding: "20px", marginBottom: "20px" }}>
         <h3>🔗 URL Scanner</h3>
+        <p style={{ marginTop: "8px", color: "var(--text-secondary)" }}>
+          Check a suspicious link for phishing patterns, impersonation, and risky redirects.
+        </p>
 
         <input
           type="text"
@@ -61,14 +108,20 @@ function UrlChecker() {
           }}
         />
 
+        {error && (
+          <p style={{ marginTop: "12px", color: "var(--status-danger)" }}>{error}</p>
+        )}
+
         <button
           onClick={checkUrl}
+          disabled={loading}
           style={{
             marginTop: "15px",
             width: "100%",
             padding: "12px",
             borderRadius: "10px",
             border: "none",
+            opacity: loading ? 0.7 : 1,
             background: "linear-gradient(90deg, #4facfe, #6366f1)",
             color: "white",
             fontWeight: "bold",
@@ -122,6 +175,65 @@ function UrlChecker() {
                 </li>
               ))}
             </ul>
+          </div>
+
+          <div className="glass-card" style={{ padding: "20px", marginTop: "20px" }}>
+            <h4>Was this URL verdict accurate?</h4>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "12px" }}>
+              <button
+                onClick={() => submitFeedback(result.label)}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  background: "rgba(34, 197, 94, 0.15)",
+                  color: "var(--status-safe)",
+                  border: "1px solid var(--status-safe)"
+                }}
+              >
+                Yes, correct
+              </button>
+              <button
+                onClick={() => submitFeedback("Safe")}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  background: "transparent",
+                  color: "var(--text-primary)",
+                  border: "1px solid var(--border-color)"
+                }}
+              >
+                Mark Safe
+              </button>
+              <button
+                onClick={() => submitFeedback("Suspicious")}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  background: "transparent",
+                  color: "var(--text-primary)",
+                  border: "1px solid var(--border-color)"
+                }}
+              >
+                Mark Suspicious
+              </button>
+              <button
+                onClick={() => submitFeedback("Dangerous")}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  background: "transparent",
+                  color: "var(--text-primary)",
+                  border: "1px solid var(--border-color)"
+                }}
+              >
+                Mark Dangerous
+              </button>
+            </div>
+            {feedbackMessage && (
+              <p style={{ marginTop: "12px", color: "var(--text-secondary)" }}>
+                {feedbackMessage}
+              </p>
+            )}
           </div>
         </>
       )}

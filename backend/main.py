@@ -1,8 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import pickle
+import json
 import os
+import pickle
+import re
+from urllib.parse import urlparse
 
 app = FastAPI()
 
@@ -37,7 +40,10 @@ class FeedbackData(BaseModel):
     input_data: str
     original_label: str
     user_label: str
-    type: str # 'text' or 'url'
+    type: str  # 'text', 'url', or 'voice'
+
+
+FEEDBACK_FILE = os.path.join(os.path.dirname(__file__), "feedback.json")
 
 @app.get("/")
 def read_root():
@@ -45,19 +51,15 @@ def read_root():
 
 # 🔗 ADVANCED URL ANALYZER
 def analyze_url(url: str):
-    from urllib.parse import urlparse
-    import re
+    normalized_url = url.strip()
+    parsed_url = urlparse(normalized_url if "://" in normalized_url else f"https://{normalized_url}")
+    domain = parsed_url.netloc.lower()
+    if not domain:
+        domain = parsed_url.path.lower()
 
-    url_lower = url.lower()
+    url_lower = normalized_url.lower()
     risk = 0
     reasons = []
-
-    # Parse URL components
-    try:
-        parsed_url = urlparse(url if "://" in url else f"http://{url}")
-        domain = parsed_url.netloc
-    except:
-        domain = url_lower
 
     # 1. TLD Reputation Check
     sketchy_tlds = [".xyz", ".top", ".pw", ".tk", ".ml", ".ga", ".cf", ".gq", ".biz", ".info", ".live", ".click", ".win", ".icu"]
@@ -80,11 +82,11 @@ def analyze_url(url: str):
                  reasons.append(f"Possible brand impersonation detected ({brand})")
 
     # 3. URL Length and Complexity
-    if len(url) > 65:
+    if len(normalized_url) > 65:
         risk += 1
         reasons.append("URL is unusually long (common in phishing)")
 
-    if url.count("-") > 3 or url.count("@") > 0:
+    if normalized_url.count("-") > 3 or normalized_url.count("@") > 0:
         risk += 1
         reasons.append("Contains excessive hyphens or special symbols")
 
@@ -107,7 +109,7 @@ def analyze_url(url: str):
         reasons.append("Raw IP address used as host (highly suspicious)")
 
     # HTTPS check
-    if not url.startswith("https"):
+    if not normalized_url.lower().startswith("https://"):
         risk += 1
         reasons.append("Not using secure HTTPS encryption")
 
@@ -127,9 +129,9 @@ def analyze_url(url: str):
         label = "Dangerous"
 
     return {
-        "url": url,
+        "url": normalized_url,
         "label": label,
-        "risk_score": min(risk * 10, 100), # Normalize score to 0-100 for visual meter
+        "risk_score": min(risk * 10, 100),  # Normalize score to 0-100 for visual meter
         "reasons": reasons if reasons else ["No known threats detected"]
     }
 
@@ -178,25 +180,31 @@ def analyze_text(data: TextData):
         "insights": insights if insights else ["No major threats detected"]
     }
 
+
+# 🔗 URL API
+@app.post("/api/check-url")
+def check_url(data: URLData):
+    if not data.url.strip():
+        raise HTTPException(status_code=400, detail="URL cannot be empty")
+
+    return analyze_url(data.url)
+
 # 🔄 FEEDBACK LOOP
 @app.post("/api/feedback")
 def save_feedback(data: FeedbackData):
-    import json
-    feedback_file = os.path.join(os.path.dirname(__file__), 'feedback.json')
-    
     feedbacks = []
-    if os.path.exists(feedback_file):
+    if os.path.exists(FEEDBACK_FILE):
         try:
-            with open(feedback_file, 'r') as f:
+            with open(FEEDBACK_FILE, "r", encoding="utf-8") as f:
                 feedbacks = json.load(f)
-        except:
+        except (json.JSONDecodeError, OSError):
             feedbacks = []
-            
-    feedbacks.append(data.dict())
-    
-    with open(feedback_file, 'w') as f:
-        json.dump(feedbacks, f, indent=4)
-        
+
+    feedbacks.append(data.model_dump())
+
+    with open(FEEDBACK_FILE, "w", encoding="utf-8") as f:
+        json.dump(feedbacks, f, indent=2)
+
     return {"message": "Feedback received! This will help improve the model."}
 
 # RUN SERVER
