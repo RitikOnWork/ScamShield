@@ -3,26 +3,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pickle
 import os
-import numpy as np
 
 app = FastAPI()
 
-# Configure CORS
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify the frontend URL
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load model and vectorizer
+# Load model
 MODELS_DIR = os.path.join(os.path.dirname(__file__), 'models')
 MODEL_PATH = os.path.join(MODELS_DIR, 'spam_model.pkl')
 VECTORIZER_PATH = os.path.join(MODELS_DIR, 'vectorizer.pkl')
-
-if not os.path.exists(MODEL_PATH) or not os.path.exists(VECTORIZER_PATH):
-    raise RuntimeError("Model files not found. Run train_model.py first.")
 
 with open(MODEL_PATH, 'rb') as f:
     model = pickle.load(f)
@@ -30,90 +26,113 @@ with open(MODEL_PATH, 'rb') as f:
 with open(VECTORIZER_PATH, 'rb') as f:
     cv = pickle.load(f)
 
+# Models
 class TextData(BaseModel):
     text: str
+
+class URLData(BaseModel):
+    url: str
 
 @app.get("/")
 def read_root():
     return {"message": "ScamShield API is running"}
 
-def normalize_text(text: str) -> str:
-    """Removes common scammer obfuscation (e.g., f.r.e.e, pr1ze)."""
-    normalized = text.lower()
-    # Remove common separators used to bypass filters
-    for char in ['.', '-', '_', '*', ' ']:
-        normalized = normalized.replace(char, '')
-    # Basic leet-speak conversion
-    leets = {'1': 'i', '0': 'o', '3': 'e', '4': 'a', '5': 's', '7': 't'}
-    for k, v in leets.items():
-        normalized = normalized.replace(k, v)
-    return normalized
+# 🔗 URL ANALYZER
+def analyze_url(url: str):
+    url_lower = url.lower()
+    risk = 0
+    reasons = []
 
+    if len(url) > 50:
+        risk += 1
+        reasons.append("URL is unusually long")
+
+    if "@" in url or "-" in url:
+        risk += 1
+        reasons.append("Contains suspicious characters")
+
+    keywords = ["login", "verify", "secure", "bank", "update"]
+    for word in keywords:
+        if word in url_lower:
+            risk += 1
+            reasons.append(f"Suspicious keyword: {word}")
+
+    if url.count(".") > 3:
+        risk += 1
+        reasons.append("Too many subdomains")
+
+    if not url.startswith("https"):
+        risk += 1
+        reasons.append("Not using HTTPS")
+
+    if risk == 0:
+        label = "Safe"
+    elif risk <= 2:
+        label = "Suspicious"
+    else:
+        label = "Dangerous"
+
+    return {
+        "url": url,
+        "label": label,
+        "risk_score": risk,
+        "reasons": reasons if reasons else ["No major issues detected"]
+    }
+
+# 🧠 TEXT ANALYSIS
 @app.post("/api/analyze")
 def analyze_text(data: TextData):
     if not data.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
-    
-    original_text = data.text
-    clean_text = original_text.lower()
-    normalized = normalize_text(original_text)
-    
-    # 1. ML Prediction
-    vect_text = cv.transform([original_text])
-    probabilities = model.predict_proba(vect_text)[0]
-    spam_prob = probabilities[1] * 100
-    
-    # 2. Heuristic Analysis & Insights
+
+    text = data.text.lower()
+
+    vect_text = cv.transform([data.text])
+    prob = model.predict_proba(vect_text)[0][1] * 100
+
     insights = []
-    heuristic_score = 0
-    
-    # Check for Urgency
-    urgency_words = ["urgent", "immediate", "action required", "expiring", "last chance", "limited time"]
-    if any(word in clean_text for word in urgency_words):
-        insights.append("High-pressure urgency tactics detected")
-        heuristic_score += 20
-        
-    # Check for Authority Impersonation
-    authorities = ["bank", "irs", "hmrc", "police", "amazon", "netflix", "fedex", "ups", "dhl", "microsoft", "apple"]
-    if any(auth in clean_text for auth in authorities):
-        insights.append("Potential impersonation of a trusted authority")
-        heuristic_score += 15
-        
-    # Check for Obfuscation
-    if normalized != clean_text.replace(' ', ''):
-        # Only flag if there's a significant difference that looks like obfuscation
-        insights.append("Character obfuscation detected (bypassing filters)")
-        heuristic_score += 25
+    score = 0
 
-    # Check for Financial Bait
-    financial_bait = ["cash", "prize", "reward", "win", "dollars", "pounds", "unclaimed", "refund", "tax"]
-    if any(word in clean_text for word in financial_bait):
-        insights.append("Financial bait/incentive detected")
-        heuristic_score += 20
+    if "urgent" in text:
+        insights.append("Urgency detected")
+        score += 20
 
-    # 3. Combine Scores (Weighted average of ML and Heuristics)
-    final_prob = (spam_prob * 0.7) + (min(heuristic_score, 100) * 0.3)
-    final_prob = min(max(final_prob, 0), 100)
-    
-    # Determine risk level
-    risk_level = "Safe"
+    if "bank" in text:
+        insights.append("Bank impersonation")
+        score += 15
+
+    if "win" in text or "prize" in text:
+        insights.append("Financial bait detected")
+        score += 20
+
+    if "http" in text:
+        insights.append("Contains suspicious link")
+        score += 25
+
+    final_prob = (prob * 0.7) + (score * 0.3)
+
+    label = "Safe"
     if final_prob > 35:
-        risk_level = "Suspicious"
+        label = "Suspicious"
     if final_prob > 70:
-        risk_level = "Scam"
-        
-    # Risky keywords for highlighting
-    risky_keywords = ["win", "prize", "claim", "urgent", "call", "text", "free", "reward", "txt", "mobile", "stop", "cash", "now", "reply", "bank", "account", "verify", "link"]
-    found_keywords = [word for word in risky_keywords if word in original_text.lower()]
-    
+        label = "Scam"
+
     return {
-        "text": original_text,
+        "text": data.text,
         "probability": round(final_prob, 2),
-        "label": risk_level,
-        "riskyWords": found_keywords,
-        "insights": insights if insights else ["No significant threats patterns detected"]
+        "label": label,
+        "insights": insights if insights else ["No major threats detected"]
     }
 
+# 🔗 URL API
+@app.post("/api/check-url")
+def check_url(data: URLData):
+    if not data.url.strip():
+        raise HTTPException(status_code=400, detail="URL cannot be empty")
+
+    return analyze_url(data.url)
+
+# RUN SERVER
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
