@@ -1,0 +1,7 @@
+# Sample local phishing domains for offline risk checks.
+# Add one domain per line.
+phish-example.com
+secure-login-alert.com
+verify-payments-now.net
+account-update-security.com
+gift-card-claim-now.biz

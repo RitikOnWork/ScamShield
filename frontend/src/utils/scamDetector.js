@@ -36,9 +36,74 @@ export const SCAM_KEYWORDS = [
   { word: "transfer", weight: 0.4 }
 ];
 
+const URL_REGEX = /\b((?:https?:\/\/|www\.)[^\s<>'"]+)/gi;
+const SHORTENER_DOMAINS = new Set([
+  'bit.ly',
+  'tinyurl.com',
+  't.co',
+  'goo.gl',
+  'cutt.ly',
+  'rb.gy',
+  'is.gd',
+  'ow.ly',
+  'shorturl.at',
+  'rebrand.ly',
+]);
+
+const extractUrls = (text) => {
+  const matches = text.match(URL_REGEX) || [];
+  const seen = new Set();
+
+  return matches
+    .map((match) => match.replace(/[.,);!?]+$/g, ''))
+    .map((match) => (match.startsWith('http') ? match : `https://${match}`))
+    .filter((url) => {
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
+};
+
+const analyzeUrls = (text) => {
+  const urls = extractUrls(text);
+
+  return urls.map((url) => {
+    const parsed = new URL(url);
+    const domain = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    const reasons = [];
+    let riskScore = 0;
+
+    if (SHORTENER_DOMAINS.has(domain)) {
+      reasons.push('Shortened URL hides the final destination');
+      riskScore += 25;
+    }
+
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(domain)) {
+      reasons.push('Direct IP-based URL instead of a domain');
+      riskScore += 30;
+    }
+
+    if (domain.includes('xn--')) {
+      reasons.push('Punycode domain can imitate trusted brands');
+      riskScore += 35;
+    }
+
+    const status = riskScore >= 70 ? 'danger' : riskScore > 0 ? 'warning' : 'clean';
+
+    return {
+      url,
+      domain,
+      status,
+      riskScore,
+      reason: reasons.length ? reasons.join('; ') : 'No phishing indicators found',
+      source: 'local-fallback',
+    };
+  });
+};
+
 export const analyzeText = (text) => {
   if (!text || text.trim().length < 5) {
-    return { probability: 0, label: "Safe", riskyWords: [] };
+    return { probability: 0, label: "Safe", riskyWords: [], insights: [], urls: [] };
   }
 
   const lowerText = text.toLowerCase();
@@ -64,6 +129,11 @@ export const analyzeText = (text) => {
   const exclamations = (text.match(/!/g) || []).length;
   if (exclamations > 3) score += 0.4;
 
+  const urls = analyzeUrls(text);
+  if (urls.length > 0) {
+    score += Math.min(Math.max(...urls.map((item) => item.riskScore), 0) / 100, 0.8);
+  }
+
   // Normalize probability (basic sigmoid or clamp)
   // Max score could be around 5-10 for a very obvious scam
   const probability = Math.min(Math.round((score / 5) * 100), 100);
@@ -72,9 +142,18 @@ export const analyzeText = (text) => {
   if (probability > 75) label = "Scam";
   else if (probability > 40) label = "Suspicious";
 
+  const insights = [];
+  if (urls.some((item) => item.status === 'danger')) {
+    insights.push('Detected link matches phishing indicators');
+  } else if (urls.length > 0) {
+    insights.push('Detected links need extra caution before opening');
+  }
+
   return {
     probability,
     label,
-    riskyWords: foundKeywords
+    riskyWords: foundKeywords,
+    insights,
+    urls
   };
 };

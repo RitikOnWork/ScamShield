@@ -7,10 +7,9 @@ ScamShield is a multi-layered security platform designed to detect and flag frau
 - `frontend/`: React + Vite application containing the user interface.
   - `src/components/TextScamDetector/`: Core component for analyzing text messages, emails, and SMS.
   - `src/utils/scamDetector.js`: Probabilistic analysis engine for text scoring.
-- `backend/`: (Planned) Node.js/Python microservices for advanced AI analysis and threat databases.
-  - `api/`: REST/WebSocket endpoints.
-  - `models/`: Machine learning model definitions.
-  - `services/`: Business logic for different detection types.
+- `backend/`: FastAPI service that serves the text-analysis model.
+  - `main.py`: API entry point.
+  - `models/`: Serialized vectorizer and trained classifier.
 
 ## Currently Implemented: Text Scam Detector
 
@@ -18,22 +17,40 @@ ScamShield is a multi-layered security platform designed to detect and flag frau
 - **Scam Probability Score**: Calculates the likelihood of fraud using weighted keyword analysis and pattern matching.
 - **Security Labeling**: Categorizes messages as **Safe**, **Suspicious**, or **Scam**.
 - **Risky Word Highlighting**: Visually flags dangerous keywords and urgent phrases.
+- **URL Phishing Checks**: Extracts URLs from messages and scores them using local phishing indicators, with optional Google Safe Browsing support.
+- **Persistent Scan History**: Saves recent analyses and detected links in a local SQLite database so results survive refreshes.
 - **Modern Aesthetic**: Dark mode, glassmorphism design with fluid animations.
 
 ## How to Run
 
-1. Navigate to the frontend directory:
+1. Start the backend:
+   ```bash
+   cd backend
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   uvicorn main:app --reload --port 8000
+   ```
+2. In a new terminal, start the frontend:
    ```bash
    cd frontend
-   ```
-2. Install dependencies:
-   ```bash
    npm install
-   ```
-3. Start the development server:
-   ```bash
    npm run dev
    ```
+3. Open the Vite URL shown in the terminal. Frontend API requests to `/api/*` are proxied to `http://127.0.0.1:8000`.
+
+Optional:
+- Set `SAFE_BROWSING_API_KEY` before starting the backend to enable Google Safe Browsing URL lookups.
+
+Saved history:
+- The backend creates `backend/data/scamshield.db` automatically and stores scan summaries plus detected URL results there.
+
+## Production Build
+
+```bash
+cd frontend
+npm run build
+```
 
 ## Future Roadmap
 - [ ] **URL Scanner**: Check links against global phishing databases.
