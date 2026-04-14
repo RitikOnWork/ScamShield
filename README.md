@@ -140,7 +140,7 @@ ScamShield/
 ## 👨‍💻 Contributors
 - **Ritik Raj** ([@RitikOnWork](https://github.com/RitikOnWork))
 - **Shivangi Joshi** ([@Shivangi-121](https://github.com/Shivangi-121))
-- - **Shivangi Joshi** ([@Rupesh576](https://github.com/Rupesh576))
+- **Rupesh Kumar** ([@Rupesh576](https://github.com/Rupesh576))
 
 ---
 <div align="center">
