@@ -82,50 +82,6 @@ ScamShield/
 └── README.md
 
 
----
-## 🏗️ Architecture Diagram
-          ┌────────────────────┐
-          │      User (UI)     │
-          │  React Frontend    │
-          └─────────┬──────────┘
-                    │
-                    │ HTTP Requests (Fetch API)
-                    ▼
-          ┌────────────────────┐
-          │    FastAPI Backend │
-          │   (main.py APIs)   │
-          └─────────┬──────────┘
-                    │
-        ┌───────────┴────────────┐
-        │                        │
-        ▼                        ▼
-┌───────────────┐      ┌────────────────┐
-│ Text Analysis │      │  URL Analyzer  │
-│  (ML Model)   │      │ (Heuristics)   │
-└──────┬────────┘      └───────┬────────┘
-       │                        │
-       ▼                        ▼
-┌───────────────┐      ┌────────────────┐
-│ Vectorizer    │      │ Pattern Checks │
-│ + Model (.pkl)│      │ Keywords, HTTPS│
-└──────┬────────┘      └───────┬────────┘
-       │                        │
-       └──────────┬─────────────┘
-                  ▼
-         ┌────────────────────┐
-         │ Risk Score Engine  │
-         │ + Explainable AI   │
-         └─────────┬──────────┘
-                   ▼
-          ┌────────────────────┐
-          │ JSON Response API  │
-          └─────────┬──────────┘
-                    ▼
-          ┌────────────────────┐
-          │ Frontend UI Output │
-          │ (Score + Insights) │
-          └────────────────────┘
-
 
 ## ⚙️ How to Run
 
